@@ -202,8 +202,11 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
   vc::Vehicle my_vehicle= vc::Vehicle();
+  int frame_counter=0;
+  bool is_chaging_lane = false;
+  int target_lane = -1;
 
-  h.onMessage([&prev_sensor_fusion_data,&my_vehicle, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&prev_sensor_fusion_data,&my_vehicle, &is_chaging_lane, &target_lane, &frame_counter, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -230,8 +233,9 @@ int main() {
           	double car_yaw = j[1]["yaw"];
           	double car_speed = j[1]["speed"];
 
-            my_vehicle = vc::Vehicle(77, car_s, car_d, car_speed, 0);
-            cout<<"MY VEHICLE: speed: "<<car_speed<<endl;
+            my_vehicle = vc::Vehicle(77, car_s, car_d, car_speed, 0, is_chaging_lane, target_lane);
+
+
 
           	// Previous path data given to the Planner
           	auto previous_path_x = j[1]["previous_path_x"];
@@ -243,88 +247,142 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	vector<vector<double>> sensor_fusion = j[1]["sensor_fusion"];
 
-            /*
-              Get next state
-            */
-            //?
-            // if (previous_path_x.size()<2){
-            //   car_s = end_path_s;
-            // }
-            //
-            map<int, vector<vector<double>>> predictions;
-            if (prev_sensor_fusion_data.empty()){
-              for(int i = 0 ; i< sensor_fusion.size(); i++){
-                vector<double> sensor_data = {sensor_fusion[i][0],sensor_fusion[i][1], sensor_fusion[i][2],
-                                  sensor_fusion[i][3], sensor_fusion[i][4], sensor_fusion[i][5], sensor_fusion[i][6]};
-                prev_sensor_fusion_data[sensor_fusion[i][0]]=sensor_data;
-              }
+
+            cout<<"MY VEHICLE: speed: "<<car_speed<<endl;
+            cout<<"Frame: "<<frame_counter<<endl;
+            cout<<"car d : "<<car_d<<", end_path_d: "<<end_path_d<<endl;
+            cout<<"LANE: "<<my_vehicle.lane<<endl;
+            cout<<"is_lane_changing: "<<is_chaging_lane<<endl;
+
+
+            int prev_size = previous_path_x.size();
+            if(prev_size>0){
+              car_s = end_path_s;
             }
-            else{
-              for(int i = 0 ; i< sensor_fusion.size(); i++){
 
-                //x, y, vx, vy, s, d
-                auto prev_sensor = prev_sensor_fusion_data[sensor_fusion[i][0]];
-                // cout<<"prev : "<<prev_sensor[0]<<", "<<prev_sensor[3]<<", "<<prev_sensor[4]<<", "<<prev_sensor[5]<<endl;
-                if(sensor_fusion[i][6]>=0)
-                {
-                  int v_id = sensor_fusion[i][0];
-                  double v_s = sensor_fusion[i][5];
-                  double v_d = sensor_fusion[i][6];
-                  double v_velocity = sqrt(sensor_fusion[i][3] * sensor_fusion[i][3]+ sensor_fusion[i][4] * sensor_fusion[i][4]);
-                  double v_vel_prev = sqrt(prev_sensor[3]*prev_sensor[3]+ prev_sensor[4]*prev_sensor[4]);
-                  double v_acceleration = (v_velocity-v_vel_prev)/ _time;
-                  double v_x = sensor_fusion[i][1];
-                  double v_y = sensor_fusion[i][2];
-                  vc::Vehicle temp_vehicle = vc::Vehicle(v_id, v_s, v_d, v_velocity, v_acceleration);
+            cout<<"-----------------------------------------------------"<<endl;
+            cout<<"Sensor Fusion:"<<endl;
 
-                  // cout<<"v_current: "<<v_velocity<<", v_prev:"<<v_vel_prev<<" ,a:"<<v_acceleration<<endl;
-                  // cout<<"---------------------"<<endl;
-                  vector<vector<double>> vehicle_horizon = temp_vehicle.getHorizon(5);
-                  predictions[sensor_fusion[i][0]]= vehicle_horizon;
+            for(int i = 0 ; i< sensor_fusion.size(); i++)
+            {
+               //x, y, vx, vy, s, d
+               int v_id = sensor_fusion[i][0];
+               double v_s = sensor_fusion[i][5];
+               double v_d = sensor_fusion[i][6];
+               double v_velocity = sqrt(sensor_fusion[i][3] * sensor_fusion[i][3]+ sensor_fusion[i][4] * sensor_fusion[i][4]);
+
+               double v_acceleration = 0;
+               double v_x = sensor_fusion[i][1];
+               double v_y = sensor_fusion[i][2];
+
+
+
+
+               vc::Vehicle temp_vehicle = vc::Vehicle(v_id, v_s, v_d, v_velocity, v_acceleration, false, -1);
+               cout<<"id: "<<temp_vehicle.id<<", s:"<<temp_vehicle.s<<", d:"<<temp_vehicle.d;
+               cout<<", v: "<<temp_vehicle.velocity<<", lane:"<<temp_vehicle.lane<<endl;
+               //valid lane
+               if(temp_vehicle.lane >= 0)
+               {
+                 //is in front of my car
+                 if(temp_vehicle.s - my_vehicle.s>=0)
+                  {
+                    // double temp_next_s_val = temp_vehicle.s + ((double)prev_size*0.02*temp_vehicle.velocity);
+                    // if (temp_next_s_val - car_s < 30)
+                    // {
+                    //    my_vehicle.velocity = 29.5;
+                    // }
+
+                    //find the front car closest to my car
+                     if(my_vehicle.has_value_front[temp_vehicle.lane]){
+                       if( temp_vehicle.s < my_vehicle.closest_vehicles_front[temp_vehicle.lane].s)
+                        {
+                          my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
+                        }
+                     }
+                     else{
+                       my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
+                       my_vehicle.has_value_front[temp_vehicle.lane] = true;
+                     }
                 }
-                vector<double> sensor_data = {sensor_fusion[i][0],sensor_fusion[i][1], sensor_fusion[i][2],
-                                  sensor_fusion[i][3], sensor_fusion[i][4], sensor_fusion[i][5], sensor_fusion[i][6]};
-                prev_sensor_fusion_data[sensor_fusion[i][0]]=sensor_data;
-              }
+                //is at the back of my car
+                else{
+                  if(my_vehicle.has_value_back[temp_vehicle.lane]){
+                    if( temp_vehicle.s > my_vehicle.closest_vehicles_back[temp_vehicle.lane].s)
+                     {
+                       my_vehicle.closest_vehicles_back[temp_vehicle.lane] = temp_vehicle;
+                     }
+                  }
+                  else{
+                    my_vehicle.closest_vehicles_back[temp_vehicle.lane] = temp_vehicle;
+                    my_vehicle.has_value_back[temp_vehicle.lane] = true;
+                  }
 
-              //print horizon predition
-              // for(map<int, vector<vector<double>>>::iterator it = predictions.begin(); it != predictions.end(); it++){
-              //     vector<vector<double>>::iterator it2 = it->second.begin();
-              //     int t = 0;
-              //     while(it2 != it->second.end()){
-              //       cout<< "id:"<<it->first<<" s: "<<it2[0][0]<<", d:"<<it2[0][1]<<", v:"<<it2[0][2]<<", a:"<<it2[0][3]<<endl;
-              //       t++;
-              //       if(t==5){
-              //         t = 0;
-              //         cout<<"-----"<<endl;
-              //       }
-              //       it2++;
-              //     }
-              //     it++;
-              // }
+                }
+
+              }
             }
 
             /* states */
+            vector<string> available_states={"KL", "LCL", "LCR"};
+            map<string, double> costs;
+            double best_speed = my_vehicle.velocity;
+            double best_lane = my_vehicle.lane;
+            double best_cost = INFINITY;
 
-            //TODO evaluate each state
-            if (!predictions.empty()){
-              vector<string> available_states={"KL", "LCL", "LCR", "PLCR", "PLCL"};
-              int current_lane = (car_d-2)/4;
-              if(current_lane == 0){
-                  available_states={"KL", "LCR", "PLCR"};
-              }else if(current_lane == 2){
-                available_states={"KL", "LCL", "PLCL"};
-              }
-              my_vehicle.realize_state(predictions, "KL");
-              // for(vector<string>::iterator it = available_states.begin(); it != available_states.end() ; it++ ){
-              //   string state = it[0];
-              //   //realize state
-              //
-              // }
+            if(my_vehicle.lane == 0){
+                available_states={"KL", "LCR"};
+            }
+            else if(my_vehicle.lane == 2){
+              available_states={"KL", "LCL"};
             }
 
 
+            if(frame_counter > 10 && !my_vehicle.is_chaging_lane){
+              for(int i=0; i<available_states.size(); i++)
+              {
+                map<string, double>result = my_vehicle.realize_state( available_states[i], prev_size);
+                costs[available_states[i]] = my_vehicle.calculate_cost(result["available_space_front"], result["available_space_back"],result["lane"]);
 
+                //TODO temporary keep line
+                if(costs[available_states[i]]< best_cost)
+                {
+                  best_lane = result["lane"];
+                  best_cost = costs[available_states[i]];
+                }
+              }
+
+              for(map<string, double>::iterator cost_it = costs.begin(); cost_it != costs.end(); cost_it++)
+              {
+                cout<<"cost : "<<cost_it->first<<" , "<<cost_it->second<<endl;
+              }
+              if (my_vehicle.lane != best_lane)
+              {
+                cout<<"LANE CHANGE TO *** "<< best_lane<<endl;
+                my_vehicle.lane = best_lane;
+                my_vehicle.is_chaging_lane = true;
+                is_chaging_lane = true;
+                target_lane = best_lane;
+                my_vehicle.target_lane = best_lane;
+              }
+              else{
+                cout<<"KEEP LANE *** "<< my_vehicle.lane<<endl;
+                frame_counter=0;
+                my_vehicle.is_chaging_lane = false;
+                is_chaging_lane = false;
+              }
+            }
+
+            frame_counter++;
+
+            my_vehicle.adjust_speed(prev_size);
+            if(frame_counter == 15)
+            {
+              frame_counter=0;
+              my_vehicle.is_chaging_lane = false;
+              is_chaging_lane= false;
+            }
+              cout<<"-----------------------------------------------------"<<endl;
             /*
             Smoothing Trajectory
               GOAL: interpolating more waypoints with spline to fill trajectory with more points
@@ -370,17 +428,17 @@ int main() {
             //-----------------------------------------------------------------
             //-3 Add a couple of points within 30m ahead of car
             const double AHEAD = 30;
-            int lane = 1;
+
             double next_s0 = car_s+AHEAD;
-            double next_d0 = 2+4*lane;
+            double next_d0 = 2+4*my_vehicle.lane;
             vector<double> next_wp0 = getXY(next_s0, next_d0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s1 = car_s+ 2*AHEAD;
-            double next_d1 = 2+4*lane;
+            double next_d1 = 2+4*my_vehicle.lane;
             vector<double> next_wp1 = getXY(next_s1, next_d1, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s2 = car_s+ 3*AHEAD;
-            double next_d2 = 2+4*lane;
+            double next_d2 = 2+4*my_vehicle.lane;
             vector<double> next_wp2 = getXY(next_s2, next_d2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             pts_x.push_back(next_wp0[0]);
@@ -421,7 +479,6 @@ int main() {
             double add_on=0;
 
             for(int i =0 ; i<= 50-previous_path_x.size(); i++ ){
-              cout<<"ref_v "<<ref_v<<endl;
               double N = target_dist/(_time*ref_v/2.24);
               double x_point = add_on + target_x/N;
               double y_point = s(x_point);
@@ -434,7 +491,6 @@ int main() {
               y_point = (x_ref*sin(ref_yaw) + y_ref*cos(ref_yaw));
               x_point+=ref_x;
               y_point+=ref_y;
-              cout<<"point added:"<<x_point<<endl;
               next_x_vals.push_back(x_point);
               next_y_vals.push_back(y_point);
             }

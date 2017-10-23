@@ -22,23 +22,60 @@ class Vehicle
 {
   public:
       int id;
+      int lane;
       double d;
       double s;
       double velocity;
       double acceleration;
       bool is_initialized;
-      double _time = 0.5;
+      double _time = 0.02;
+      vector<bool> has_value_front={false,false,false};
+      vector<bool> has_value_back={false,false,false};
+      map<int,vc::Vehicle> closest_vehicles_front;
+      map<int,vc::Vehicle> closest_vehicles_back;
+      bool is_chaging_lane = false;
+      int target_lane;
+
   public:
       // set default boundary condition to be zero curvature at both ends
-      Vehicle(int id ,double s, double d, double velocity,double acceleration) {
+      Vehicle(int id ,double s, double d, double velocity,double acceleration, bool is_chaging_lane, int target_lane) {
+          this->is_chaging_lane = is_chaging_lane;
           this->d = d;
           this->s = s;
           this->velocity = velocity;
           this->acceleration = acceleration;
           this->id = id;
           this->is_initialized = true;
-          // state = "CS";
-          // max_acceleration = -1;
+
+        //  double temp_lane = (this->d - 2)/4;
+        if(this->is_chaging_lane){
+          this->lane = target_lane;
+        }
+        else
+        {
+          if(this->d >=0 && this->d <=3.8){
+            this->lane=0;
+          }
+          else if(this->d >3.8 && this->d <=7.8){
+            this->lane=1;
+          }
+          else if(this->d >7.8){
+            this->lane=2;
+          }
+          else{
+            this->lane = -1;
+          }
+        }
+
+        //set targte lane to current lane if none is given
+        if(target_lane == -1)
+        {
+          this->target_lane = this->lane;
+        }
+        else{
+          this->target_lane = target_lane;
+        }
+
       }
       Vehicle() {
         this->is_initialized= false;
@@ -46,9 +83,11 @@ class Vehicle
       ~Vehicle(){}
 
       vector<vector<double>> getHorizon(int horizon);
-      void realize_state(map<int, vector<vector<double>>> predictions, string state);
-      void adjust_speed_for_lane(map<int, vector<vector<double>>> predictions, int lane);
-
+      map<string, double> realize_state(string state, int prev_size);
+      void adjust_speed(int prev_size);
+      double calculate_cost( double available_space_front, double available_space_back, int lane);
+      double check_for_car_back(int lane, int prev_size);
+      double check_for_car_front(int lane, int prev_size);
 };
 
 vector<vector<double>> Vehicle::getHorizon(int horizon){
@@ -67,92 +106,153 @@ vector<vector<double>> Vehicle::getHorizon(int horizon){
 
   }
 
-void Vehicle::realize_state(map<int, vector<vector<double>>> predictions, string state){
+map<string, double> Vehicle::realize_state(string state, int prev_size){
   // find next car in this lane
   // find available room and proper velocity
     //s, d, v ,a
+    map<string, double> result;
 
-    int lane = int((this->d-2)/4);
-    cout<<"Current Lane: "<< lane<<" d:"<<this->d<<" s:"<<this->s<<endl;
     if(state.compare("KL") == 0)
     {
-      cout<<"*****"<<endl;
-    	adjust_speed_for_lane(predictions, lane);
+      cout<<"Keep Lane:"<<endl;
+      result["available_space_front"] = check_for_car_front(this->lane, prev_size);
+      result["available_space_back"]= INFINITY;
+      cout<<"available_space_front: "<<result["available_space_front"]<<endl;
+      result["lane"] = this->lane;
+      cout<<"--"<<endl;
     }
     else if(state.compare("LCL") == 0)
     {
-
+      cout<<"Left Lane:"<<endl;
+      result["available_space_front"] = check_for_car_front(this->lane-1, prev_size);
+      cout<<"available_space_front: "<<result["available_space_front"]<<endl;
+      result["available_space_back"] = check_for_car_back(this->lane-1, prev_size);
+      result["lane"] = this->lane-1;
+      cout<<"available_space_back: "<<result["available_space_back"]<<endl;
+      cout<<"--"<<endl;
+      //check for car in left
     }
     else if(state.compare("LCR") == 0)
     {
-
+      cout<<"Right Lane:"<<endl;
+      result["available_space_front"] = check_for_car_front(this->lane+1, prev_size);
+      cout<<"available_space_front: "<<result["available_space_front"]<<endl;
+      result["available_space_back"] = check_for_car_back(this->lane+1, prev_size);
+      result["lane"] = this->lane+1;
+      cout<<"available_space_back: "<<result["available_space_back"]<<endl;
+      cout<<"--"<<endl;
+      //check for car in right
     }
-    else if(state.compare("PLCL") == 0)
-    {
-
-    }
-    else if(state.compare("PLCR") == 0)
-    {
-
-    }
+    return result;
 }
 
-void Vehicle::adjust_speed_for_lane(map<int, vector<vector<double>>> predictions, int lane){
+
+
+void Vehicle::adjust_speed(int prev_size){
 
   // find all car in this lane
   //s, d, v ,a
-  map<string,double> closest_vehicle={{"v",INFINITY}, {"s",INFINITY}};
   bool found = false;
-  double buffer = 40;
-  double velocity_change = 1.5;
-
-  for(map<int, vector<vector<double>>>::iterator it=predictions.begin(); it != predictions.end(); it++){
-    vector<vector<double>>::iterator it2= it->second.begin();
-    vector<double> other_vehicle =  it2[0];
-    int other_vehicle_id = it->first;
-    int other_vehicle_lane = int((other_vehicle[1]-2)/4);
-    cout<<"Vehicle **DETECTED** id:"<<other_vehicle_id<<" lane: "<<other_vehicle_lane<<" s:"<<other_vehicle[0]<<" , v:"<<other_vehicle[2]<<endl;
-
-    if(other_vehicle_lane == lane && other_vehicle[0]> this->s){
-        // find the closes vehicle in front
-        if(other_vehicle[0]  <= closest_vehicle["s"]){
-          closest_vehicle["s"] = other_vehicle[0];
-          closest_vehicle["v"] = other_vehicle[2];
-          cout<<"closest_vehicle:"<<other_vehicle_id<<endl;
-          found = true;
-        }
-    }
-  }
-
+  double buffer = 25;
+  double critical_space = 10;
+  double stop_space = 2;
+  double velocity_decrese = 0.224;
+  double velocity_increase = 0.224;
   double t = _time;
-  double vehicle_next_s = this->s + this->velocity*t;
-  double available_space = buffer;
-  if(found){
-    available_space = closest_vehicle["s"] - vehicle_next_s;
+
+  double available_space_front = check_for_car_front(this->lane, prev_size);
+  cout<<"Adjusting Speed available_space: "<<available_space_front<<endl;
+
+  if(available_space_front< stop_space ){
+    this->velocity -= 10 ;
   }
-  cout<<"current s:"<<this->s <<" ,next s:"<<vehicle_next_s<<endl;
-  cout<<"available_space: "<<available_space<<endl;
-  cout<<"Speed Adjusted from:"<<this->velocity;
-  if(available_space < buffer){
-    if(this->velocity - velocity_change >= 0){
-      this->velocity -= velocity_change;
+  else if(available_space_front < critical_space ){
+    this->velocity  -= 0.22;
+  }
+  else if(available_space_front < buffer){
+    if(this->velocity- velocity_decrese >= 0){
+      this->velocity  -= velocity_decrese;
     }
-    else{
-      this->velocity = 0;
-    }
-  }
-  else if (this->velocity + velocity_change < 49){
-    this->velocity += velocity_change;
   }
 
-
-  if(this->velocity < 0.5){
-    this->velocity += 0.5;
+  //reduce speed if changing lane
+  // if(this->is_chaging_lane){
+  //   this->velocity -= 0.5;
+  // }
+  if (this->velocity + velocity_increase < 49){
+    this->velocity  += velocity_increase;
   }
 
-  cout<<"Speed Adjusted to:"<<this->velocity<<endl;
+  // to avoid division by zero
+  if(this->velocity  < 0){
+    this->velocity  = 0.224;
+  }
+
 }
 
+double Vehicle::check_for_car_back(int lane, int prev_size ){
+  double t = _time;
+  double available_space = INFINITY;
+  if(this->has_value_back[lane]){
+    Vehicle closest_vehicle = this->closest_vehicles_back[lane];
+    cout<<"Vehicle BACK **DETECTED** id:"<<closest_vehicle.id<<" d: "<<closest_vehicle.d<<" s:"<<closest_vehicle.s<<" , v:"<<closest_vehicle.velocity<<endl;
+    double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
+    available_space = my_vehicle_next_s - closest_vehicle.s;
+  }
+  return available_space;
+}
+
+double Vehicle::check_for_car_front(int lane, int prev_size ){
+  double t = _time;
+  double available_space = INFINITY;
+  if(this->has_value_front[lane]){
+    Vehicle closest_vehicle = this->closest_vehicles_front[lane];
+    cout<<"Vehicle FRONT **DETECTED** id:"<<closest_vehicle.id<<" d: "<<closest_vehicle.d<<" s:"<<closest_vehicle.s<<" , v:"<<closest_vehicle.velocity<<endl;
+    double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
+    available_space = closest_vehicle.s - my_vehicle_next_s;
+  }
+  return available_space;
+}
+
+
+double Vehicle::calculate_cost(double available_space_front, double available_space_back, int new_lane){
+
+  double cost_speed=0;
+  double cost_collision= 10000;
+  double cost_jerk=0;
+  double multiply_lane_change = 1000;
+  double speed_limit = 50;
+  double lane_change = 2000;
+
+  double total_cost =0;
+  if(this->lane != lane){
+    if(available_space_back < 50){
+      //huge penalty
+        total_cost += 1000 * cost_collision;
+    }
+    else if (available_space_back < 150){
+        total_cost+= cost_collision/available_space_back; //* exp(-available_space_back);
+    }
+    total_cost+=lane_change;
+  }
+  // else{
+  //   //reward for keeping lane
+  //   total_cost -= 100;
+  // }
+  if(available_space_front <= 50){
+    // huge collision cost
+    total_cost += 1000 * cost_collision;
+  }
+  else if(available_space_front < 150){
+    total_cost += cost_collision/available_space_front ;
+  }
+
+
+  total_cost += sqrt(speed_limit - this->velocity);
+
+
+  return total_cost;
+}
 
 } // namespace vc
 #endif /* VEHICLE_H */
