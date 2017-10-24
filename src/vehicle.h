@@ -35,6 +35,7 @@ class Vehicle
       map<int,vc::Vehicle> closest_vehicles_back;
       bool is_chaging_lane = false;
       int target_lane;
+      bool collision_flag = false;
 
   public:
       // set default boundary condition to be zero curvature at both ends
@@ -147,41 +148,61 @@ map<string, double> Vehicle::realize_state(string state, int prev_size){
 }
 
 
-
 void Vehicle::adjust_speed(int prev_size){
 
   // find all car in this lane
   //s, d, v ,a
   bool found = false;
-  double buffer = 25;
+  double buffer = 50;
   double critical_space = 10;
   double stop_space = 2;
-  double velocity_decrese = 0.224;
-  double velocity_increase = 0.224;
+  double velocity_decrese = 2;
+  double velocity_increase = 2;
   double t = _time;
 
-  double available_space_front = check_for_car_front(this->lane, prev_size);
-  cout<<"Adjusting Speed available_space: "<<available_space_front<<endl;
+  if(this->collision_flag)
+  {
+    this->velocity  -=  velocity_decrese;
+    cout<<"COLLISION SPEED DECREASE "<<velocity_decrese<<endl;
+  }
+  else
+  {
+    double available_space_front = check_for_car_front(this->lane, prev_size);
+    cout<<"Adjusting Speed available_space: "<<available_space_front<<endl;
 
-  if(available_space_front< stop_space ){
-    this->velocity -= 10 ;
-  }
-  else if(available_space_front < critical_space ){
-    this->velocity  -= 0.22;
-  }
-  else if(available_space_front < buffer){
-    if(this->velocity- velocity_decrese >= 0){
+    if(this->is_chaging_lane){
       this->velocity  -= velocity_decrese;
+      cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+    }
+    else
+    {
+      if(available_space_front < buffer){
+          //if(this->velocity- velocity_decrese >= 0){
+            this->velocity  -= velocity_decrese;
+            cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+          //}
+      }
+      else{
+        if (this->velocity + velocity_increase < 49)
+        {
+          this->velocity  += velocity_increase;
+          cout<<"SPEED INCREASE "<<velocity_increase<<endl;
+        }
+        else{
+          this->velocity  -= velocity_decrese;
+          cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+        }
+      }
     }
   }
+
+
 
   //reduce speed if changing lane
   // if(this->is_chaging_lane){
   //   this->velocity -= 0.5;
   // }
-  if (this->velocity + velocity_increase < 49){
-    this->velocity  += velocity_increase;
-  }
+
 
   // to avoid division by zero
   if(this->velocity  < 0){
@@ -196,8 +217,10 @@ double Vehicle::check_for_car_back(int lane, int prev_size ){
   if(this->has_value_back[lane]){
     Vehicle closest_vehicle = this->closest_vehicles_back[lane];
     cout<<"Vehicle BACK **DETECTED** id:"<<closest_vehicle.id<<" d: "<<closest_vehicle.d<<" s:"<<closest_vehicle.s<<" , v:"<<closest_vehicle.velocity<<endl;
-    double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
-    available_space = my_vehicle_next_s - closest_vehicle.s;
+    // double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
+    // available_space = my_vehicle_next_s - closest_vehicle.s;
+    double other_vehicle_next_s = closest_vehicle.s + prev_size*closest_vehicle.velocity*t;
+    available_space = this->s - other_vehicle_next_s;
   }
   return available_space;
 }
@@ -208,8 +231,10 @@ double Vehicle::check_for_car_front(int lane, int prev_size ){
   if(this->has_value_front[lane]){
     Vehicle closest_vehicle = this->closest_vehicles_front[lane];
     cout<<"Vehicle FRONT **DETECTED** id:"<<closest_vehicle.id<<" d: "<<closest_vehicle.d<<" s:"<<closest_vehicle.s<<" , v:"<<closest_vehicle.velocity<<endl;
-    double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
-    available_space = closest_vehicle.s - my_vehicle_next_s;
+    // double my_vehicle_next_s = this->s + prev_size*this->velocity*t;
+    // available_space = closest_vehicle.s - my_vehicle_next_s;
+    double other_vehicle_next_s = closest_vehicle.s + prev_size*closest_vehicle.velocity*t;
+    available_space = other_vehicle_next_s - this->s;
   }
   return available_space;
 }
@@ -225,27 +250,17 @@ double Vehicle::calculate_cost(double available_space_front, double available_sp
   double lane_change = 2000;
 
   double total_cost =0;
-  if(this->lane != lane){
-    if(available_space_back < 50){
-      //huge penalty
-        total_cost += 1000 * cost_collision;
-    }
-    else if (available_space_back < 150){
-        total_cost+= cost_collision/available_space_back; //* exp(-available_space_back);
-    }
-    total_cost+=lane_change;
+  if(this->lane != new_lane){
+      total_cost+=50;
+      if(available_space_back < 20){
+        //huge penalty
+          total_cost += 1000 * cost_collision;
+          cout<<"COLLISION COST ADDED"<<endl;
+      }
+      total_cost+= cost_collision/available_space_back; //* exp(-available_space_back);
+
   }
-  // else{
-  //   //reward for keeping lane
-  //   total_cost -= 100;
-  // }
-  if(available_space_front <= 50){
-    // huge collision cost
-    total_cost += 1000 * cost_collision;
-  }
-  else if(available_space_front < 150){
-    total_cost += cost_collision/available_space_front ;
-  }
+  total_cost += cost_collision/available_space_front ;
 
 
   total_cost += sqrt(speed_limit - this->velocity);

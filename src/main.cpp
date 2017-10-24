@@ -248,17 +248,20 @@ int main() {
           	vector<vector<double>> sensor_fusion = j[1]["sensor_fusion"];
 
 
-            cout<<"MY VEHICLE: speed: "<<car_speed<<endl;
-            cout<<"Frame: "<<frame_counter<<endl;
-            cout<<"car d : "<<car_d<<", end_path_d: "<<end_path_d<<endl;
-            cout<<"LANE: "<<my_vehicle.lane<<endl;
-            cout<<"is_lane_changing: "<<is_chaging_lane<<endl;
+
 
 
             int prev_size = previous_path_x.size();
-            if(prev_size>0){
-              car_s = end_path_s;
-            }
+            // if(prev_size>0){
+            //   car_s = end_path_s;
+            // }
+            cout<<"Frame: "<<frame_counter<<endl;
+            cout<<"MY VEHICLE: "<<endl;
+            cout<<"speed: "<<car_speed<<endl;
+            cout<<"s: "<<car_s<<endl;
+            cout<<"car d : "<<car_d<<", end_path_d: "<<end_path_d<<endl;
+            cout<<"LANE: "<<my_vehicle.lane<<endl;
+            cout<<"is_lane_changing: "<<is_chaging_lane<<endl;
 
             cout<<"-----------------------------------------------------"<<endl;
             cout<<"Sensor Fusion:"<<endl;
@@ -275,40 +278,49 @@ int main() {
                double v_x = sensor_fusion[i][1];
                double v_y = sensor_fusion[i][2];
 
-
-
-
                vc::Vehicle temp_vehicle = vc::Vehicle(v_id, v_s, v_d, v_velocity, v_acceleration, false, -1);
                cout<<"id: "<<temp_vehicle.id<<", s:"<<temp_vehicle.s<<", d:"<<temp_vehicle.d;
                cout<<", v: "<<temp_vehicle.velocity<<", lane:"<<temp_vehicle.lane<<endl;
                //valid lane
                if(temp_vehicle.lane >= 0)
                {
+                 double temp_next_s_val = temp_vehicle.s + ((double)prev_size*0.02*temp_vehicle.velocity);
                  //is in front of my car
-                 if(temp_vehicle.s - my_vehicle.s>=0)
+                 if(temp_next_s_val > my_vehicle.s )
                   {
-                    // double temp_next_s_val = temp_vehicle.s + ((double)prev_size*0.02*temp_vehicle.velocity);
-                    // if (temp_next_s_val - car_s < 30)
+                    ;
+                    // if ()
                     // {
                     //    my_vehicle.velocity = 29.5;
                     // }
+                    if(temp_vehicle.lane == my_vehicle.lane)
+                    {
+                      if(temp_next_s_val-my_vehicle.s < 50){
+                        cout<<"COLLISION with:"<< temp_vehicle.id<<" s:"<<temp_vehicle.s<<" next_s"<<temp_next_s_val<<endl;
+                        my_vehicle.collision_flag = true;
+                      }
+                      else{
+                        my_vehicle.collision_flag = false;
+                      }
+                    }
 
                     //find the front car closest to my car
-                     if(my_vehicle.has_value_front[temp_vehicle.lane]){
-                       if( temp_vehicle.s < my_vehicle.closest_vehicles_front[temp_vehicle.lane].s)
-                        {
-                          my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
-                        }
-                     }
-                     else{
-                       my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
-                       my_vehicle.has_value_front[temp_vehicle.lane] = true;
-                     }
+                   if(my_vehicle.has_value_front[temp_vehicle.lane]){
+                     if( temp_next_s_val < my_vehicle.closest_vehicles_front[temp_vehicle.lane].s)
+                      {
+                        my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
+                      }
+                   }
+                   else{
+                     my_vehicle.closest_vehicles_front[temp_vehicle.lane] = temp_vehicle;
+                     my_vehicle.has_value_front[temp_vehicle.lane] = true;
+                   }
                 }
                 //is at the back of my car
                 else{
+
                   if(my_vehicle.has_value_back[temp_vehicle.lane]){
-                    if( temp_vehicle.s > my_vehicle.closest_vehicles_back[temp_vehicle.lane].s)
+                    if( temp_next_s_val > my_vehicle.closest_vehicles_back[temp_vehicle.lane].s)
                      {
                        my_vehicle.closest_vehicles_back[temp_vehicle.lane] = temp_vehicle;
                      }
@@ -338,7 +350,7 @@ int main() {
             }
 
 
-            if(frame_counter > 10 && !my_vehicle.is_chaging_lane){
+            if(frame_counter > 50 && !my_vehicle.is_chaging_lane){
               for(int i=0; i<available_states.size(); i++)
               {
                 map<string, double>result = my_vehicle.realize_state( available_states[i], prev_size);
@@ -376,7 +388,8 @@ int main() {
             frame_counter++;
 
             my_vehicle.adjust_speed(prev_size);
-            if(frame_counter == 15)
+
+            if(frame_counter == 100)
             {
               frame_counter=0;
               my_vehicle.is_chaging_lane = false;
@@ -427,7 +440,12 @@ int main() {
             }
             //-----------------------------------------------------------------
             //-3 Add a couple of points within 30m ahead of car
-            const double AHEAD = 30;
+            double AHEAD = 30;
+            // if(my_vehicle.is_chaging_lane)
+            // {
+            //   AHEAD = 30;
+            //
+            // }
 
             double next_s0 = car_s+AHEAD;
             double next_d0 = 2+4*my_vehicle.lane;
@@ -472,7 +490,7 @@ int main() {
             }
             //-----------------------------------------------------------------
             // -7 add more points and convert to global coordinate
-            double target_x = 30.0;
+            double target_x = (double)AHEAD;
             double target_y = s(target_x);
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
 
