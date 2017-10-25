@@ -36,6 +36,8 @@ class Vehicle
       bool is_chaging_lane = false;
       int target_lane;
       bool collision_flag = false;
+      double prev_available_space;
+      double reducing_speed = false;
 
   public:
       // set default boundary condition to be zero curvature at both ends
@@ -162,38 +164,55 @@ void Vehicle::adjust_speed(int prev_size){
 
   if(this->collision_flag)
   {
-    this->velocity  -=  velocity_decrese;
+    this->velocity  -=  (velocity_decrese + 0.5);
     cout<<"COLLISION SPEED DECREASE "<<velocity_decrese<<endl;
+    reducing_speed= true;
   }
   else
   {
     double available_space_front = check_for_car_front(this->lane, prev_size);
     cout<<"Adjusting Speed available_space: "<<available_space_front<<endl;
-
-    if(this->is_chaging_lane){
-      this->velocity  -= velocity_decrese;
-      cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+    cout<<"reducing_speed: "<< reducing_speed<<endl;
+    if(available_space_front - prev_available_space >10){
+      if(available_space_front >30)
+        velocity_decrese =0.5;
+      else{
+        velocity_decrese =1.5;
+      }
     }
-    else
+    else{
+      if(reducing_speed)
+        {
+          velocity_increase =0.5;
+        }
+    }
+    // if(this->is_chaging_lane){
+    //   this->velocity  -= velocity_decrese;
+    //   cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+    // }
+    if(!this->is_chaging_lane)
     {
       if(available_space_front < buffer){
           //if(this->velocity- velocity_decrese >= 0){
             this->velocity  -= velocity_decrese;
-            cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+            cout<<"* SPEED DECREASE "<<velocity_decrese<<endl;
+            reducing_speed= true;
           //}
       }
       else{
         if (this->velocity + velocity_increase < 49)
         {
           this->velocity  += velocity_increase;
-          cout<<"SPEED INCREASE "<<velocity_increase<<endl;
+          cout<<"** SPEED INCREASE "<<velocity_increase<<endl;
+          reducing_speed = false;
         }
         else{
-          this->velocity  -= velocity_decrese;
-          cout<<"SPEED DECREASE "<<velocity_decrese<<endl;
+          cout<<"*** SPEED REMAIN "<<velocity_decrese<<endl;
+          reducing_speed = false;
         }
       }
     }
+    prev_available_space = available_space_front;
   }
 
 

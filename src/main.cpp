@@ -288,7 +288,6 @@ int main() {
                  //is in front of my car
                  if(temp_next_s_val > my_vehicle.s )
                   {
-                    ;
                     // if ()
                     // {
                     //    my_vehicle.velocity = 29.5;
@@ -298,9 +297,6 @@ int main() {
                       if(temp_next_s_val-my_vehicle.s < 50){
                         cout<<"COLLISION with:"<< temp_vehicle.id<<" s:"<<temp_vehicle.s<<" next_s"<<temp_next_s_val<<endl;
                         my_vehicle.collision_flag = true;
-                      }
-                      else{
-                        my_vehicle.collision_flag = false;
                       }
                     }
 
@@ -337,7 +333,7 @@ int main() {
 
             /* states */
             vector<string> available_states={"KL", "LCL", "LCR"};
-            map<string, double> costs;
+            map<string, double> costs = {{"KL",INFINITY}, {"LCL", INFINITY}, {"LCR", INFINITY}};
             double best_speed = my_vehicle.velocity;
             double best_lane = my_vehicle.lane;
             double best_cost = INFINITY;
@@ -350,7 +346,7 @@ int main() {
             }
 
 
-            if(frame_counter > 50 && !my_vehicle.is_chaging_lane){
+            if((frame_counter > 50 && !my_vehicle.is_chaging_lane )|| my_vehicle.collision_flag){
               for(int i=0; i<available_states.size(); i++)
               {
                 map<string, double>result = my_vehicle.realize_state( available_states[i], prev_size);
@@ -389,7 +385,7 @@ int main() {
 
             my_vehicle.adjust_speed(prev_size);
 
-            if(frame_counter == 100)
+            if(frame_counter == 200)
             {
               frame_counter=0;
               my_vehicle.is_chaging_lane = false;
@@ -441,22 +437,35 @@ int main() {
             //-----------------------------------------------------------------
             //-3 Add a couple of points within 30m ahead of car
             double AHEAD = 30;
-            // if(my_vehicle.is_chaging_lane)
-            // {
-            //   AHEAD = 30;
-            //
-            // }
+            double a = 0, b = 0;
+            double ref_d0 =2+ 4*my_vehicle.lane;
+            double ref_d1 = ref_d0;
+            double ref_d2 = ref_d1;
+            if(my_vehicle.is_chaging_lane){
+              AHEAD = 50;
+              if(my_vehicle.target_lane > my_vehicle.lane)
+              {
 
+                ref_d0 += 0.2;
+                ref_d1= ref_d0 + 0.2;
+                ref_d2 = ref_d1+ 0.2;
+              }
+              else{
+                  ref_d0 -= 0.2;
+                  ref_d1= ref_d0 - 0.2;
+                  ref_d2 = ref_d1- 0.2;
+              }
+            }
             double next_s0 = car_s+AHEAD;
-            double next_d0 = 2+4*my_vehicle.lane;
+            double next_d0 = ref_d0;
             vector<double> next_wp0 = getXY(next_s0, next_d0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s1 = car_s+ 2*AHEAD;
-            double next_d1 = 2+4*my_vehicle.lane;
+            double next_d1 = ref_d1;
             vector<double> next_wp1 = getXY(next_s1, next_d1, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s2 = car_s+ 3*AHEAD;
-            double next_d2 = 2+4*my_vehicle.lane;
+            double next_d2 = ref_d2;
             vector<double> next_wp2 = getXY(next_s2, next_d2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             pts_x.push_back(next_wp0[0]);
