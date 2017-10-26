@@ -11,6 +11,7 @@
 #include "spline.h"
 #include "vehicle.h"
 
+
 using namespace std;
 
 // for convenience
@@ -205,8 +206,10 @@ int main() {
   int frame_counter=0;
   bool is_chaging_lane = false;
   int target_lane = -1;
-
-  h.onMessage([&prev_sensor_fusion_data,&my_vehicle, &is_chaging_lane, &target_lane, &frame_counter, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  double slope = 0;
+  bool ignite = true;
+  vector<double> speed_cache;
+  h.onMessage([&prev_sensor_fusion_data,&my_vehicle, &speed_cache, &slope,&ignite, &is_chaging_lane, &target_lane, &frame_counter, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -262,6 +265,7 @@ int main() {
             cout<<"car d : "<<car_d<<", end_path_d: "<<end_path_d<<endl;
             cout<<"LANE: "<<my_vehicle.lane<<endl;
             cout<<"is_lane_changing: "<<is_chaging_lane<<endl;
+            cout<<"SLOPE:"<<slope<<endl;
 
             cout<<"-----------------------------------------------------"<<endl;
             cout<<"Sensor Fusion:"<<endl;
@@ -286,7 +290,7 @@ int main() {
                {
                  double temp_next_s_val = temp_vehicle.s + ((double)prev_size*0.02*temp_vehicle.velocity);
                  //is in front of my car
-                 if(temp_next_s_val > my_vehicle.s )
+                 if(temp_vehicle.s> my_vehicle.s && temp_next_s_val > my_vehicle.s )
                   {
                     // if ()
                     // {
@@ -294,9 +298,11 @@ int main() {
                     // }
                     if(temp_vehicle.lane == my_vehicle.lane)
                     {
-                      if(temp_next_s_val-my_vehicle.s < 50){
+                      if(temp_next_s_val-my_vehicle.s < 40){
                         cout<<"COLLISION with:"<< temp_vehicle.id<<" s:"<<temp_vehicle.s<<" next_s"<<temp_next_s_val<<endl;
                         my_vehicle.collision_flag = true;
+                        my_vehicle.collision_space = temp_vehicle.s - my_vehicle.s ;
+
                       }
                     }
 
@@ -346,46 +352,66 @@ int main() {
             }
 
 
-            if((frame_counter > 50 && !my_vehicle.is_chaging_lane )|| my_vehicle.collision_flag){
-              for(int i=0; i<available_states.size(); i++)
+            if(!my_vehicle.is_chaging_lane && my_vehicle.velocity >20)
+            {
+              if(frame_counter > 50 || (my_vehicle.collision_flag && my_vehicle.collision_space>=30))
               {
-                map<string, double>result = my_vehicle.realize_state( available_states[i], prev_size);
-                costs[available_states[i]] = my_vehicle.calculate_cost(result["available_space_front"], result["available_space_back"],result["lane"]);
-
-                //TODO temporary keep line
-                if(costs[available_states[i]]< best_cost)
+                for(int i=0; i<available_states.size(); i++)
                 {
-                  best_lane = result["lane"];
-                  best_cost = costs[available_states[i]];
+                  map<string, double>result = my_vehicle.realize_state( available_states[i], prev_size);
+                  costs[available_states[i]] = my_vehicle.calculate_cost(result["available_space_front"], result["available_space_back"],result["lane"]);
+
+                  //TODO temporary keep line
+                  if(costs[available_states[i]]< best_cost)
+                  {
+                    best_lane = result["lane"];
+                    best_cost = costs[available_states[i]];
+                  }
+                }
+
+                for(map<string, double>::iterator cost_it = costs.begin(); cost_it != costs.end(); cost_it++)
+                {
+                  cout<<"cost : "<<cost_it->first<<" , "<<cost_it->second<<endl;
+                }
+                if (my_vehicle.lane != best_lane)
+                {
+                  cout<<"LANE CHANGE TO *** "<< best_lane<<endl;
+                  my_vehicle.lane = best_lane;
+                  my_vehicle.is_chaging_lane = true;
+                  is_chaging_lane = true;
+                  target_lane = best_lane;
+                  my_vehicle.target_lane = best_lane;
+                }
+                else{
+                  cout<<"KEEP LANE *** "<< my_vehicle.lane<<endl;
+                  frame_counter=0;
+                  my_vehicle.is_chaging_lane = false;
+                  is_chaging_lane = false;
                 }
               }
 
-              for(map<string, double>::iterator cost_it = costs.begin(); cost_it != costs.end(); cost_it++)
-              {
-                cout<<"cost : "<<cost_it->first<<" , "<<cost_it->second<<endl;
-              }
-              if (my_vehicle.lane != best_lane)
-              {
-                cout<<"LANE CHANGE TO *** "<< best_lane<<endl;
-                my_vehicle.lane = best_lane;
-                my_vehicle.is_chaging_lane = true;
-                is_chaging_lane = true;
-                target_lane = best_lane;
-                my_vehicle.target_lane = best_lane;
-              }
-              else{
-                cout<<"KEEP LANE *** "<< my_vehicle.lane<<endl;
-                frame_counter=0;
-                my_vehicle.is_chaging_lane = false;
-                is_chaging_lane = false;
-              }
             }
 
             frame_counter++;
 
-            my_vehicle.adjust_speed(prev_size);
+            //skip the first (oldest speed)
+            if(!speed_cache.empty() && speed_cache.size() == 50)
+                speed_cache.erase(speed_cache.begin());
 
-            if(frame_counter == 200)
+            my_vehicle.adjust_speed(prev_size,speed_cache);
+
+
+
+            speed_cache.push_back(my_vehicle.velocity);
+            cout<<"Push new speed to stack "<<my_vehicle.velocity<<" , stack size: "<<speed_cache.size()<<" first"<<speed_cache[0]<<" , last:"<<speed_cache[speed_cache.size()-1]<<endl;
+
+
+            // if(my_vehicle.velocity < 5 && ignite){
+            //   my_vehicle.velocity += 5;
+            //   ignite = false;
+            // }
+
+            if(frame_counter == 150)
             {
               frame_counter=0;
               my_vehicle.is_chaging_lane = false;
@@ -406,16 +432,19 @@ int main() {
                 ref_v = my_vehicle.velocity;
 
               }
+            cout<<" 1*"<<endl;
             //-----------------------------------------------------------------
             //-1 Keep current car information as ref values (x,y,yaw)
             vector<double> pts_x, pts_y;
             double ref_x = car_x,
                    ref_y = car_y,
                    ref_yaw= deg2rad(car_yaw);
+            cout<<" 2*"<<endl;
             //-----------------------------------------------------------------
             //-2 Use 2 previous waypoints to make path tanget to car
             if(previous_path_x.size()<2){
               //go backward 1 step
+              cout<<" 3*"<<endl;
               double prev_car_x = car_x - cos(car_yaw);
               double prev_car_y = car_y - sin(car_yaw);
               pts_x.push_back(prev_car_x);
@@ -424,6 +453,7 @@ int main() {
               pts_y.push_back(car_y);
             }
             else{
+              cout<<" 4*"<<endl;
               ref_x = previous_path_x[previous_path_x.size()-1];
               ref_y = previous_path_y[previous_path_x.size()-1];
               double ref_x_prev = previous_path_x[previous_path_x.size()-2];
@@ -436,6 +466,7 @@ int main() {
             }
             //-----------------------------------------------------------------
             //-3 Add a couple of points within 30m ahead of car
+            cout<<"HERE *"<<endl;
             double AHEAD = 30;
             double a = 0, b = 0;
             double ref_d0 =2+ 4*my_vehicle.lane;
@@ -522,6 +553,7 @@ int main() {
               next_y_vals.push_back(y_point);
             }
 
+            slope = (target_y - ref_y)/(target_x - ref_x);
 
 
           	json msgJson;
