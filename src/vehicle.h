@@ -198,7 +198,7 @@ map<string, double> Vehicle::realize_state(string state, int prev_size,map<int, 
       }
       else{
         result["target_s"] = car_front[0] - buffer;
-        result["target_s_dot"] -=2;
+        result["target_s_dot"] -=1;
       }
 
     }
