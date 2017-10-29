@@ -11,7 +11,7 @@ The goals of this project are the following:
  * The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. 
  * Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 50 m/s^3.
 
-<img src="./examples/best_shot.png" width="600" height="280" align="middle" hspace="20"/>
+<img src="./uploads/best_shot.png" width="800" height="400" align="middle" hspace="20"/>
 
 
 ## Description
