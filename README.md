@@ -55,6 +55,8 @@ The goals of this project are the following:
   * ego car tends to act poorly on changing lanes when its speed is less than 20mph (from my experiments), I avoid lane chnging when car has not reached a certain speed
   * for changing lanes I have a separate counter to allow car to move to target lane before doing next evaluation process
   * to avoid max acceleration speed should only be incremented and decremented with very small values, which is not always possible to maintain becuase sometimes other cars just move to our lane and it's impossible to keep max acceleration below 10 and still not crash the other car.
+  * I used speed limit of 46mph instead of 50mph to have more space for taking any actions
+  * lane changing with 30m ahead causes jerk, so in case of lane change I use 50m instead and use d+0.2 shifts along to make the lane change smoothe
   
 
 
