@@ -134,6 +134,80 @@ vector<double> getFrenet(double x, double y, double theta, const vector<double> 
 
 }
 
+double evaluate_speed(vector<double> speed_cache,double new_speed,double old_speed){
+
+  if(speed_cache.size()==50){
+    vector<double> speed_totals = {0.0, 0.0, 0.0, 0.0, new_speed};
+    vector<double> speed_change_rate = {0.0, 0.0 ,0.0 ,0.0};
+    double total_acc=0.0;
+    double last_interval_speed = 0.0;
+
+    int counter = 0;
+
+
+
+    for(vector<double>::iterator it = speed_cache.begin()+1; it!= speed_cache.end(); it++){
+      int chunk = counter / 10;
+      speed_totals[chunk]+=it[0];
+      counter++;
+    }
+    for(int i =0; i<5; i++){
+      cout<<" avg speed interval "<<i<<" , "<< (speed_totals[i]/10)<<" :"<<speed_totals[i]<<endl;
+    }
+
+    for(int i =0; i<4 ; i++){
+      speed_change_rate[i] = abs(speed_totals[i+1] - speed_totals[i])/(10*0.4);
+
+      total_acc += speed_change_rate[i];
+    }
+    cout<<"change rate "<<0<<","<<speed_change_rate[0]<<endl;
+    cout<<"change rate "<<1<<","<<speed_change_rate[1]<<endl;
+    cout<<"change rate "<<2<<","<<speed_change_rate[2]<<endl;
+    cout<<"change rate "<<3<<","<<speed_change_rate[3]<<endl;
+    cout<<"ACC "<<total_acc<<endl;
+    if(total_acc > 5){
+      cout<<"speed**: "<<new_speed<<endl;
+      // new_speed = (speed_totals[2])/10;
+      new_speed = speed_totals[3]/10;
+      cout<<"new speed: "<<new_speed<<endl;
+      //must reduce new speed
+    }
+
+
+    cout<<"NEW ACC"<<endl;
+
+    speed_totals = {0.0, 0.0, 0.0, 0.0, new_speed};
+    speed_change_rate = {0.0, 0.0 ,0.0 ,0.0};
+    total_acc=0.0;
+    last_interval_speed = 0.0;
+    counter = 0;
+
+
+
+    for(vector<double>::iterator it = speed_cache.begin()+1; it!= speed_cache.end(); it++){
+      int chunk = counter / 10;
+      speed_totals[chunk]+=it[0];
+      counter++;
+    }
+    for(int i =0; i<5; i++){
+      cout<<" avg speed interval "<<i<<" , "<< (speed_totals[i]/10)<<" :"<<speed_totals[i]<<endl;
+    }
+
+    for(int i =0; i<4 ; i++){
+      speed_change_rate[i] = abs(speed_totals[i+1] - speed_totals[i])/(10*0.4);
+
+      total_acc += speed_change_rate[i];
+    }
+    cout<< "total_acc"<<total_acc<<endl;
+    cout<<"-->"<<endl;
+
+  }
+
+
+   return new_speed;
+
+}
+
 // Transform from Frenet s,d coordinates to Cartesian x,y
 vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
 {
@@ -204,14 +278,16 @@ int main() {
   }
   vc::Vehicle my_vehicle= vc::Vehicle();
   int frame_counter=0;
-  bool is_chaging_lane = false;
-  int target_lane = -1;
+  bool is_changing_lane = false;
+  double target_lane = -1;
   double slope = 0;
   bool ignite = true;
   vector<double> speed_cache;
   double prev_speed = 0.0;
+  double start_counting = 0;
+  int keep_lane_counting =0;
 
-  h.onMessage([&prev_sensor_fusion_data,&my_vehicle, &prev_speed, &slope,&ignite, &is_chaging_lane, &target_lane, &frame_counter, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&prev_sensor_fusion_data,&my_vehicle,&keep_lane_counting, &speed_cache, &start_counting, &prev_speed, &slope,&ignite, &is_changing_lane, &target_lane, &frame_counter, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -255,7 +331,7 @@ int main() {
             car_speed *= 0.44704;
 
             int HORIZON = 5;
-            my_vehicle = vc::Vehicle(77, car_s, car_d, car_speed, is_chaging_lane, target_lane);
+            my_vehicle = vc::Vehicle(77, car_s, car_d, car_speed, is_changing_lane, target_lane);
 
             if(prev_size > 4){
               double theta = deg2rad(car_yaw);
@@ -280,7 +356,7 @@ int main() {
             cout<<"   d_dot_dot: "<<my_vehicle.d_dot_dot<<endl;
             cout<<"   index: "<<my_vehicle.map_index<<endl;
             cout<<"   LANE: "<<my_vehicle.lane<<endl;
-            cout<<"   is_lane_changing: "<<is_chaging_lane<<endl;
+            cout<<"   is_changing_lane: "<<is_changing_lane<<endl;
             if(my_vehicle.s_dot < prev_speed){
               cout<<"REDUCED SPEED from:"<<prev_speed<<" to:"<<my_vehicle.s_dot<<endl;
             }
@@ -302,7 +378,7 @@ int main() {
 
                vc::Vehicle temp_vehicle = vc::Vehicle(v_id, v_s, v_d, v_velocity, false, -1);
 
-               if(temp_vehicle.lane==0 || temp_vehicle.lane==1 || temp_vehicle.lane==2 ){
+               if(temp_vehicle.lane>=0  && temp_vehicle.lane<=2 ){
                  cout<<"   valid car id: "<<temp_vehicle.id<<", s:"<<temp_vehicle.s<<", d:"<<temp_vehicle.d;
                  cout<<", v: "<<temp_vehicle.s_dot<<", lane:"<<temp_vehicle.lane<<endl;
                  predictions[temp_vehicle.id] = temp_vehicle.getHorizon(HORIZON);
@@ -313,39 +389,94 @@ int main() {
             /* states */
             map<string, double> costs = {{"KL",INFINITY}, {"LCL", INFINITY}, {"LCR", INFINITY}};
             double best_s_dot = my_vehicle.s_dot;
-            int best_lane = my_vehicle.lane;
+            double best_lane = my_vehicle.lane;
             double best_cost = INFINITY;
             double best_d = my_vehicle.d;
+            double target_s ;
+
 
             vector<string> available_states = my_vehicle.getAvailableStates();
-            // available_states={"KL"};
-            for(int i=0; i<available_states.size(); i++)
-            {
-              cout<<"** STATE: "<<available_states[i]<<endl;
-              cout<<"   -Realizing:"<<endl;
-              map<string, double>target = my_vehicle.realize_state( available_states[i], prev_size, predictions, HORIZON, ignite);
-              cout<<"   -Trajectory:"<<endl;
-              map<string, vector<double>> trajectory = my_vehicle.get_trajectory(target, HORIZON);
-              cout<<"   -Cost:"<<endl;
-              costs[available_states[i]] = my_vehicle.calculate_cost(trajectory, predictions);
-              if(costs[available_states[i]]< best_cost)
+
+
+            if(frame_counter < 400 || my_vehicle.s_dot < 20*0.44704 || keep_lane_counting < 50)
               {
-                best_s_dot = target["target_s_dot"];
-                best_d = target["target_d"];
-                best_lane = my_vehicle.getLine(best_d);
-                best_cost = costs[available_states[i]];
+                available_states = {"KL"};
+                keep_lane_counting++;
               }
+
+            // available_states={"KL"};
+            if(!is_changing_lane){
+              for(int i=0; i<available_states.size(); i++)
+              {
+                cout<<"** STATE: "<<available_states[i]<<endl;
+                cout<<"   -Realizing:"<<endl;
+                map<string, double>target = my_vehicle.realize_state( available_states[i], prev_size, predictions, HORIZON, ignite);
+                cout<<"   -Trajectory:"<<endl;
+                map<string, vector<double>> trajectory = my_vehicle.get_trajectory(target, HORIZON);
+                cout<<"   -Cost:"<<endl;
+                costs[available_states[i]] = my_vehicle.calculate_cost(trajectory, predictions, target["target_lane"]);
+                if(costs[available_states[i]]< best_cost )
+                {
+                  best_s_dot = target["target_s_dot"];
+                  best_d = target["target_d"];
+                  best_lane = target["target_lane"]; //my_vehicle.getLine(best_d);
+                  best_cost = costs[available_states[i]];
+                  target_s = target["target_s"];
+                  if(best_lane != my_vehicle.lane){
+                    is_changing_lane = true;
+                    target_lane = best_lane;
+                    keep_lane_counting = 0;
+                    //don't change speed when changing lane to avoid MAX ACC
+                    best_s_dot = my_vehicle.s_dot;
+                  }
+                  else{
+                     my_vehicle.is_chaging_lane = false;
+                     is_changing_lane = false;
+                     my_vehicle.lane = best_lane;
+                   }
+                }
+              }
+
+              best_s_dot = evaluate_speed(speed_cache, best_s_dot, my_vehicle.s_dot);
+
+
+              cout<<"cost KL: "<< costs["KL"]<<endl;
+              cout<<"cost LCL: "<<costs["LCL"] <<endl;
+              cout<<"cost LCR: "<<costs["LCR"]<<endl;
+              cout<<"** BEST COST:"<<best_cost<<" best_lane:"<<best_lane<<" best_d:"<<best_d<<" best_s_dot"<<best_s_dot<<endl;
+
+              cout<<"** Chose TARGET:"<<endl;
+              cout<<"d:"<<best_d<<" ,s_dot: "<<best_s_dot<<" target_s:"<<target_s<<endl;
+
+            }
+            else{
+              cout<<"In Buffer for lane change: "<<start_counting<<endl;
+              //0.5 sec buffer for lane change
+                start_counting +=1;
+                if(start_counting > 70)
+                {
+                  is_changing_lane=false;
+                  start_counting = 0;
+                }
             }
 
-            cout<<"** BEST COST:"<<best_cost<<" best_lane:"<<best_lane<<" best_d:"<<best_d<<" best_s_dot"<<best_s_dot<<endl;
 
-            cout<<"** Chose TARGET:"<<endl;
-            cout<<"d:"<<best_d<<" ,s_dot:"<<best_s_dot*2.23694<<endl;
 
             /*
             Smoothing Trajectory
               GOAL: interpolating more waypoints with spline to fill trajectory with more points
             */
+
+            //is vehile is below ACC_TOTAL ?
+            if(!speed_cache.empty() && speed_cache.size() == 50)
+             {
+               speed_cache.erase(speed_cache.begin());
+             }
+             speed_cache.push_back(best_s_dot);
+
+            cout<<"Push new speed to stack "<<best_s_dot<<" , stack size: "<<speed_cache.size()<<" first"<<speed_cache[0]<<" , last:"<<speed_cache[speed_cache.size()-1]<<endl;
+
+
 
             double ref_v = best_s_dot * 2.23694; // max mps
 
@@ -383,24 +514,50 @@ int main() {
 
             double AHEAD = 30;
 
+            double ref_d0 =2+ 4*my_vehicle.lane;
+            double ref_d1 = ref_d0;
+            double ref_d2 = ref_d1;
+            double ref_d3 = ref_d2;
+            if(my_vehicle.is_chaging_lane){
+              AHEAD = 50;
+              if(my_vehicle.target_lane > my_vehicle.lane)
+              {
+
+                ref_d0 += 0.2;
+                ref_d1= ref_d0 + 0.2;
+                ref_d2 = ref_d1+ 0.2;
+                ref_d3 = ref_d2+ 0.2;
+              }
+              else{
+                  ref_d0 -= 0.2;
+                  ref_d1= ref_d0 - 0.2;
+                  ref_d2 = ref_d1- 0.2;
+                  ref_d3 = ref_d2 - 0.2;
+              }
+            }
             double next_s0 = car_s+AHEAD;
-            double next_d0 = best_d;
+            double next_d0 = ref_d0;
             vector<double> next_wp0 = getXY(next_s0, next_d0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s1 = car_s+ 2*AHEAD;
-            double next_d1 = best_d;
+            double next_d1 = ref_d1;
             vector<double> next_wp1 = getXY(next_s1, next_d1, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double next_s2 = car_s+ 3*AHEAD;
-            double next_d2 = best_d;
+            double next_d2 = ref_d2;
             vector<double> next_wp2 = getXY(next_s2, next_d2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+            double next_s3 = car_s+ 4*AHEAD;
+            double next_d3 = ref_d2;
+            vector<double> next_wp3 = getXY(next_s3, next_d3, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
 
             pts_x.push_back(next_wp0[0]);
             pts_y.push_back(next_wp0[1]);
             pts_x.push_back(next_wp1[0]);
             pts_y.push_back(next_wp1[1]);
-            pts_x.push_back(next_wp2[0]);
-            pts_y.push_back(next_wp2[1]);
+            pts_x.push_back(next_wp3[0]);
+            pts_y.push_back(next_wp3[1]);
 
             //-----------------------------------------------------------------
             // -4 transforming points to local car's coordinates
@@ -431,26 +588,26 @@ int main() {
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
 
             double add_on=0;
+            if(ref_v>0){
+              for(int i =0 ; i<= 50-previous_path_x.size(); i++ ){
+                double N = target_dist/(_time*ref_v/2.24);
+                cout<<"N: "<<N<<endl;
+                double x_point = add_on + target_x/N;
+                double y_point = s(x_point);
+                add_on = x_point;
 
-            for(int i =0 ; i<= 50-previous_path_x.size(); i++ ){
-              if(ref_v< 1)
-                ref_v = 1;
-              double N = target_dist/(_time*ref_v/2.24);
-              cout<<"N: "<<N<<endl;
-              double x_point = add_on + target_x/N;
-              double y_point = s(x_point);
-              add_on = x_point;
-
-              //global conversion
-              double x_ref = x_point;
-              double y_ref = y_point;
-              x_point = (x_ref*cos(ref_yaw) - y_ref*sin(ref_yaw));
-              y_point = (x_ref*sin(ref_yaw) + y_ref*cos(ref_yaw));
-              x_point+=ref_x;
-              y_point+=ref_y;
-              next_x_vals.push_back(x_point);
-              next_y_vals.push_back(y_point);
+                //global conversion
+                double x_ref = x_point;
+                double y_ref = y_point;
+                x_point = (x_ref*cos(ref_yaw) - y_ref*sin(ref_yaw));
+                y_point = (x_ref*sin(ref_yaw) + y_ref*cos(ref_yaw));
+                x_point+=ref_x;
+                y_point+=ref_y;
+                next_x_vals.push_back(x_point);
+                next_y_vals.push_back(y_point);
+              }
             }
+
 
 
 
